@@ -1,0 +1,296 @@
+---
+title: "Go Integration Overview"
+description: "Overview of Go integration options for the Email API"
+---
+
+# Go Integration Options
+
+Our Email API offers multiple approaches for Go integration: using our official library (`shoutbox`), making direct API calls using the standard `net/http` package, or integrating with popular web frameworks like Gin and Echo. Here's a comparison to help you choose the right approach for your project.
+
+## Library Approach (`shoutbox`)
+
+[View Library Implementation →](/examples/go)
+
+### Pros
+
+- Full Go support with strong typing
+- Context support for timeouts and cancellation
+- Built-in error handling and validation
+- Efficient file attachment handling
+- Request validation
+- Concurrent-safe client
+
+### Example
+
+```go
+package main
+
+import "github.com/shoutboxnet/shoutbox-go"
+
+func main() {
+    client := shoutbox.NewClient(os.Getenv("SHOUTBOX_API_KEY"))
+
+    email := &shoutbox.EmailRequest{
+        From:    "no-reply@yourdomain.com",
+        To:      "recipient@example.com",
+        Subject: "Hello World",
+        HTML:    "<h1>Welcome!</h1>",
+    }
+
+    if err := client.SendEmail(context.Background(), email); err != nil {
+        log.Fatal(err)
+    }
+}
+```
+
+## Web Framework Integration
+
+[View Go Implementation →](/examples/go)
+
+### Pros
+
+- Seamless integration with Gin, Echo, and other frameworks
+- Middleware support
+- Environment configuration handling
+- Context-aware requests
+- Strong type safety
+- Easy form handling
+
+### Example (Gin)
+
+```go
+package main
+
+import (
+    "github.com/gin-gonic/gin"
+    "github.com/shoutboxnet/shoutbox-go"
+)
+
+func main() {
+    r := gin.Default()
+    client := shoutbox.NewClient(os.Getenv("SHOUTBOX_API_KEY"))
+
+    r.POST("/send", func(c *gin.Context) {
+        var req struct {
+            To      string `json:"to"`
+            Subject string `json:"subject"`
+            HTML    string `json:"html"`
+        }
+
+        if err := c.BindJSON(&req); err != nil {
+            c.JSON(400, gin.H{"error": err.Error()})
+            return
+        }
+
+        email := &shoutbox.EmailRequest{
+            From:    "your-app@domain.com",
+            To:      req.To,
+            Subject: req.Subject,
+            HTML:    req.HTML,
+        }
+
+        if err := client.SendEmail(c.Request.Context(), email); err != nil {
+            c.JSON(500, gin.H{"error": err.Error()})
+            return
+        }
+
+        c.JSON(200, gin.H{"success": true})
+    })
+
+    r.Run()
+}
+```
+
+### Example (Echo)
+
+```go
+package main
+
+import (
+    "github.com/labstack/echo/v4"
+    "github.com/shoutboxnet/shoutbox-go"
+)
+
+func main() {
+    e := echo.New()
+    client := shoutbox.NewClient(os.Getenv("SHOUTBOX_API_KEY"))
+
+    e.POST("/send", func(c echo.Context) error {
+        var req struct {
+            To      string `json:"to"`
+            Subject string `json:"subject"`
+            HTML    string `json:"html"`
+        }
+
+        if err := c.Bind(&req); err != nil {
+            return err
+        }
+
+        email := &shoutbox.EmailRequest{
+            From:    "your-app@domain.com",
+            To:      req.To,
+            Subject: req.Subject,
+            HTML:    req.HTML,
+        }
+
+        if err := client.SendEmail(c.Request().Context(), email); err != nil {
+            return err
+        }
+
+        return c.JSON(200, map[string]bool{"success": true})
+    })
+
+    e.Start(":8080")
+}
+```
+
+## Standard Library Approach
+
+[View Raw Implementation →](/examples/go)
+
+### Pros
+
+- No external dependencies
+- Complete control over HTTP requests
+- Standard library reliability
+- Direct API interaction
+- Easy customization
+- Minimal footprint
+
+### Example
+
+```go
+package main
+
+import (
+    "bytes"
+    "encoding/json"
+    "net/http"
+)
+
+func main() {
+    data := map[string]interface{}{
+        "from":    "sender@yourdomain.com",
+        "to":      "recipient@example.com",
+        "subject": "Hello World",
+        "html":    "<h1>Welcome!</h1>",
+    }
+
+    jsonData, err := json.Marshal(data)
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    req, err := http.NewRequest(
+        "POST",
+        "https://api.shoutbox.net/send",
+        bytes.NewBuffer(jsonData),
+    )
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    req.Header.Set("Authorization", "Bearer "+os.Getenv("SHOUTBOX_API_KEY"))
+    req.Header.Set("Content-Type", "application/json")
+
+    resp, err := http.DefaultClient.Do(req)
+    if err != nil {
+        log.Fatal(err)
+    }
+    defer resp.Body.Close()
+}
+```
+
+## Choosing the Right Approach
+
+### Use the Library When:
+
+- You want the easiest and fastest integration
+- You need context support for timeouts and cancellation
+- You want built-in error handling
+- You're building a larger application that benefits from type safety
+- You need features like file attachments handled automatically
+- You prefer a more abstracted, higher-level API
+
+### Use Web Framework Integration When:
+
+- You're building a Gin, Echo, or other framework-based application
+- You need middleware capabilities
+- You want form handling support
+- You need framework-specific features
+- You want to leverage the framework's error handling
+
+### Use Standard Library When:
+
+- You want minimal dependencies
+- You need complete control over HTTP requests
+- You're building a minimal application
+- You have specific requirements not supported by the library
+- You want to minimize dependency footprint
+- You prefer working directly with the API
+
+## Feature Comparison
+
+| Feature              | Library       | Web Framework | Standard Lib    |
+| -------------------- | ------------- | ------------- | --------------- |
+| Type Safety          | ✅ Built-in   | ✅ Built-in   | ⚠️ Manual Types |
+| Dependencies         | More          | Framework     | None            |
+| Error Handling       | ✅ Built-in   | ✅ Framework  | ⚠️ Manual       |
+| File Attachments     | ✅ Simplified | ✅ Framework  | ⚠️ Manual       |
+| Request Validation   | ✅ Built-in   | ✅ Framework  | ⚠️ Manual       |
+| Learning Curve       | Low           | Medium        | Medium          |
+| Customization        | Limited       | High          | Full Control    |
+| Maintenance Required | Low           | Medium        | Higher          |
+| Context Support      | ✅ Built-in   | ✅ Framework  | ✅ Manual       |
+| Form Handling        | Limited       | ✅ Built-in   | ⚠️ Manual       |
+
+## Migration
+
+You can easily switch between approaches as your needs evolve. All methods use the same underlying API, so the core functionality remains the same. The main difference is in how you interact with the API and the level of abstraction you prefer.
+
+### From Standard Library to Library
+
+```go
+// Standard Library
+req, _ := http.NewRequest(
+    "POST",
+    "https://api.shoutbox.net/send",
+    bytes.NewBuffer(jsonData),
+)
+req.Header.Set("Authorization", "Bearer "+apiKey)
+resp, err := http.DefaultClient.Do(req)
+
+// Library
+client := shoutbox.NewClient(apiKey)
+err := client.SendEmail(context.Background(), &shoutbox.EmailRequest{
+    From:    "sender@yourdomain.com",
+    To:      "recipient@example.com",
+    Subject: "Hello",
+    HTML:    "<h1>Welcome!</h1>",
+})
+```
+
+### From Library to Gin
+
+```go
+// Library
+client := shoutbox.NewClient(apiKey)
+err := client.SendEmail(ctx, email)
+
+// Gin Handler
+func sendEmail(c *gin.Context) {
+    client := shoutbox.NewClient(os.Getenv("SHOUTBOX_API_KEY"))
+    var req EmailRequest
+    if err := c.BindJSON(&req); err != nil {
+        c.JSON(400, gin.H{"error": err.Error()})
+        return
+    }
+    if err := client.SendEmail(c.Request.Context(), &req); err != nil {
+        c.JSON(500, gin.H{"error": err.Error()})
+        return
+    }
+    c.JSON(200, gin.H{"success": true})
+}
+```
+
+All approaches are fully supported and maintained. Choose the one that best fits your project's needs and development style.

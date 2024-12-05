@@ -1,0 +1,425 @@
+---
+title: "Without your library"
+description: "Simple, powerful email sending API with Go client library"
+---
+
+# Email API Go Client
+
+Simple, powerful email sending API with support for attachments and custom headers.
+
+## Quick Start
+
+```go
+package main
+
+import (
+    "bytes"
+    "encoding/json"
+    "net/http"
+)
+
+func main() {
+    data := map[string]interface{}{
+        "from":    "sender@yourdomain.com",
+        "to":      "recipient@example.com",
+        "subject": "Hello World",
+        "html":    "<h1>Welcome!</h1>",
+    }
+
+    jsonData, err := json.Marshal(data)
+    if err != nil {
+        panic(err)
+    }
+
+    req, err := http.NewRequest(
+        "POST",
+        "https://api.shoutbox.net/send",
+        bytes.NewBuffer(jsonData),
+    )
+    if err != nil {
+        panic(err)
+    }
+
+    req.Header.Set("Authorization", "Bearer YOUR_API_KEY")
+    req.Header.Set("Content-Type", "application/json")
+
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    if err != nil {
+        panic(err)
+    }
+    defer resp.Body.Close()
+}
+```
+
+## Package Setup
+
+Create a new package for the Shoutbox API:
+
+```go
+// shoutbox/client.go
+package shoutbox
+
+import (
+    "bytes"
+    "encoding/json"
+    "fmt"
+    "net/http"
+    "time"
+)
+
+type Client struct {
+    APIKey     string
+    BaseURL    string
+    HTTPClient *http.Client
+}
+
+func NewClient(apiKey string) *Client {
+    return &Client{
+        APIKey:  apiKey,
+        BaseURL: "https://api.shoutbox.net",
+        HTTPClient: &http.Client{
+            Timeout: time.Second * 10,
+        },
+    }
+}
+
+// EmailRequest represents the structure of an email request
+type EmailRequest struct {
+    From        string            `json:"from"`
+    To          string            `json:"to"`
+    Subject     string            `json:"subject"`
+    HTML        string            `json:"html"`
+    Name        string            `json:"name,omitempty"`
+    ReplyTo     string            `json:"reply_to,omitempty"`
+    Attachments []Attachment      `json:"attachments,omitempty"`
+    Headers     map[string]string `json:"headers,omitempty"`
+}
+
+type Attachment struct {
+    Filename    string `json:"filename"`
+    Content     []byte `json:"content"`
+    ContentType string `json:"content_type"`
+}
+
+func (c *Client) SendEmail(req *EmailRequest) error {
+    jsonData, err := json.Marshal(req)
+    if err != nil {
+        return fmt.Errorf("error marshaling request: %w", err)
+    }
+
+    request, err := http.NewRequest(
+        "POST",
+        fmt.Sprintf("%s/send", c.BaseURL),
+        bytes.NewBuffer(jsonData),
+    )
+    if err != nil {
+        return fmt.Errorf("error creating request: %w", err)
+    }
+
+    request.Header.Set("Authorization", "Bearer "+c.APIKey)
+    request.Header.Set("Content-Type", "application/json")
+
+    resp, err := c.HTTPClient.Do(request)
+    if err != nil {
+        return fmt.Errorf("error sending request: %w", err)
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+        return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+    }
+
+    return nil
+}
+```
+
+## Basic Request Structure
+
+| Field      | Type   | Required | Description                 |
+| ---------- | ------ | -------- | --------------------------- |
+| `from`     | string | Yes      | Sender email address        |
+| `to`       | string | Yes      | Recipient email address(es) |
+| `subject`  | string | Yes      | Email subject line          |
+| `html`     | string | Yes      | HTML content of the email   |
+| `name`     | string | No       | Sender name                 |
+| `reply_to` | string | No       | Reply-to email address      |
+
+## Recipients
+
+### Multiple Recipients
+
+```go
+client := shoutbox.NewClient(os.Getenv("SHOUTBOX_API_KEY"))
+
+req := &shoutbox.EmailRequest{
+    From:    "no-reply@yourdomain.com",
+    To:      "user1@example.com,user2@example.com",
+    Subject: "Team Update",
+    HTML:    "<h1>Important Announcement</h1>",
+}
+
+err := client.SendEmail(req)
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+### Named Recipients
+
+```go
+req := &shoutbox.EmailRequest{
+    From:    "no-reply@yourdomain.com",
+    To:      "John Doe <john@example.com>,Jane Smith <jane@example.com>",
+    Subject: "Team Meeting",
+    HTML:    "<h1>Meeting Invitation</h1>",
+}
+
+err := client.SendEmail(req)
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+## Reply-To Address
+
+```go
+req := &shoutbox.EmailRequest{
+    From:    "no-reply@yourdomain.com",
+    ReplyTo: "Support Team <support@yourdomain.com>",
+    To:      "customer@example.com",
+    Subject: "Support Ticket Update",
+    HTML:    "<h1>Your ticket has been updated</h1>",
+}
+
+err := client.SendEmail(req)
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+## Attachments
+
+### Helper Functions for Attachments
+
+```go
+// shoutbox/helpers.go
+package shoutbox
+
+import (
+    "fmt"
+    "io"
+    "mime"
+    "os"
+    "path/filepath"
+)
+
+func NewAttachmentFromFile(filePath string) (Attachment, error) {
+    content, err := os.ReadFile(filePath)
+    if err != nil {
+        return Attachment{}, fmt.Errorf("error reading file: %w", err)
+    }
+
+    // Detect content type
+    contentType := mime.TypeByExtension(filepath.Ext(filePath))
+    if contentType == "" {
+        contentType = "application/octet-stream"
+    }
+
+    return Attachment{
+        Filename:    filepath.Base(filePath),
+        Content:     content,
+        ContentType: contentType,
+    }, nil
+}
+
+func NewAttachmentFromReader(reader io.Reader, filename string) (Attachment, error) {
+    content, err := io.ReadAll(reader)
+    if err != nil {
+        return Attachment{}, fmt.Errorf("error reading content: %w", err)
+    }
+
+    contentType := mime.TypeByExtension(filepath.Ext(filename))
+    if contentType == "" {
+        contentType = "application/octet-stream"
+    }
+
+    return Attachment{
+        Filename:    filename,
+        Content:     content,
+        ContentType: contentType,
+    }, nil
+}
+```
+
+### Complete Example with Attachments
+
+```go
+// Add PDF attachment
+pdfAttachment, err := shoutbox.NewAttachmentFromFile("january_report.pdf")
+if err != nil {
+    log.Fatal(err)
+}
+
+// Add Excel attachment
+xlsAttachment, err := shoutbox.NewAttachmentFromFile("data.xlsx")
+if err != nil {
+    log.Fatal(err)
+}
+
+req := &shoutbox.EmailRequest{
+    From:        "reports@yourdomain.com",
+    Name:        "Reports Team",
+    To:          "John Smith <john@example.com>",
+    Subject:     "Monthly Report - January 2024",
+    HTML:        "<h1>Monthly Report</h1><p>Please find your report attached.</p>",
+    Attachments: []shoutbox.Attachment{pdfAttachment, xlsAttachment},
+}
+
+err = client.SendEmail(req)
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+## Custom Headers
+
+### Complete Example with Headers
+
+```go
+req := &shoutbox.EmailRequest{
+    From:    "newsletter@yourdomain.com",
+    Name:    "Newsletter Team",
+    To:      "Subscriber <subscriber@example.com>",
+    ReplyTo: "Newsletter Support <newsletter-support@yourdomain.com>",
+    Subject: "Your Weekly Newsletter",
+    HTML:    "<h1>This Week's Updates</h1><p>Latest news and updates...</p>",
+    Headers: map[string]string{
+        "List-Unsubscribe":          "<https://yourdomain.com/unsubscribe>",
+        "List-Unsubscribe-Post":     "List-Unsubscribe=One-Click",
+        "X-Campaign-ID":             "newsletter_2024_01",
+        "X-Mailer":                  "ShoutboxAPI/1.0",
+        "Precedence":                "bulk",
+        "X-Auto-Response-Suppress":   "OOF, AutoReply",
+    },
+}
+
+err := client.SendEmail(req)
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+## Context Support
+
+Add context support to handle timeouts and cancellation:
+
+```go
+// shoutbox/client.go
+func (c *Client) SendEmailWithContext(ctx context.Context, req *EmailRequest) error {
+    jsonData, err := json.Marshal(req)
+    if err != nil {
+        return fmt.Errorf("error marshaling request: %w", err)
+    }
+
+    request, err := http.NewRequestWithContext(
+        ctx,
+        "POST",
+        fmt.Sprintf("%s/send", c.BaseURL),
+        bytes.NewBuffer(jsonData),
+    )
+    if err != nil {
+        return fmt.Errorf("error creating request: %w", err)
+    }
+
+    request.Header.Set("Authorization", "Bearer "+c.apiKey)
+    request.Header.Set("Content-Type", "application/json")
+
+    resp, err := c.HTTPClient.Do(request)
+    if err != nil {
+        return fmt.Errorf("error sending request: %w", err)
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+        return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+    }
+
+    return nil
+}
+```
+
+Usage with context:
+
+```go
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+
+err := client.SendEmailWithContext(ctx, req)
+if err != nil {
+    log.Fatal(err)
+}
+```
+
+## Security Best Practices
+
+<Info>
+### API Key Management
+
+Use environment variables for API keys:
+
+```go
+apiKey := os.Getenv("SHOUTBOX_API_KEY")
+if apiKey == "" {
+    log.Fatal("SHOUTBOX_API_KEY environment variable is not set")
+}
+```
+
+### Error Handling
+
+Implement proper error handling:
+
+```go
+if err := client.SendEmail(req); err != nil {
+    switch {
+    case errors.Is(err, context.DeadlineExceeded):
+        log.Printf("request timed out: %v", err)
+    default:
+        log.Printf("failed to send email: %v", err)
+    }
+    return
+}
+```
+
+### Email Validation
+
+Use the provided validation functions:
+
+```go
+if err := shoutbox.ValidateEmail(email); err != nil {
+    log.Printf("invalid email address: %v", err)
+    return
+}
+
+if err := shoutbox.ValidateEmailList(emails); err != nil {
+    log.Printf("invalid email addresses: %v", err)
+    return
+}
+```
+</Info>
+
+## Rate Limits
+
+<Warning>
+The following rate limits apply:
+
+- 60 requests per minute per API key
+- Maximum attachment size: 10MB
+- Maximum recipients per email: 50
+
+Please contact support if you need higher limits for your use case.
+</Warning>
+
+## Support
+
+For additional support or questions, please contact our support team.
